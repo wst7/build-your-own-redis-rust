@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use parser::{Parser, Value};
+use parser::{RespParser, RespType};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -21,38 +21,58 @@ async fn main() {
 }
 
 async fn handle_connection(mut stream: TcpStream) {
-    let response = String::from("+PONG\r\n");
     loop {
         let mut buffer = [0; 1024];
         let n = stream.read(&mut buffer).await.unwrap();
         if n == 0 {
             break;
         }
-        let request = String::from_utf8_lossy(&buffer[..n]);
-        match Parser::parse(&request) {
-            Ok(value) => match value {
-                Value::SimpleString(s) => {
-                    match s.as_str() {
-                        "PING" => {
-                            let response = String::from("+PONG\r\n");
-                            stream.write_all(response.as_bytes()).await.unwrap();
-                        }
-                        "ECHO" => {
-                            let response = String::from("+ECHO\r\n");
-                            stream.write_all(response.as_bytes()).await.unwrap();
-                        }
-                        _ => {
-                            let response = String::from("+PONG\r\n");
-                            stream.write_all(response.as_bytes()).await.unwrap();
-                        }
-                        
-                    }
+        let mut parser = RespParser::new(&buffer[..n]);
+        match parser.parse() {
+            Ok(resp) => match execute_command(resp) {
+                Ok(response) => {
+                    println!("Response: {}", response);
+                    stream.write_all(response.as_bytes()).await.unwrap();
+                }
+                Err(err) => {
+                    stream.write_all(format!("-ERR {}\r\n", err).as_bytes()).await.unwrap();
                 }
             },
+
             Err(e) => {
-                println!("Error: {}", e);
+                let response = format!("-ERR {}\r\n", e);
+                stream.write_all(response.as_bytes()).await.unwrap();
             }
         }
-        
+    }
+}
+
+fn execute_command(resp: RespType) -> Result<String, String> {
+    match resp {
+        RespType::Array(Some(elements)) => {
+            let command = match &elements[0] {
+                RespType::BulkString(Some(cmd)) => cmd.to_uppercase(),
+                _ => return Err("Invalid command format".to_string()),
+            };
+            let args = elements[1..]
+                .iter()
+                .filter_map(|arg| match arg {
+                    RespType::BulkString(Some(value)) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<String>>();
+            match command.as_str() {
+                "ECHO" => {
+                    if args.len() != 1 {
+                        Err("ECHO command requires exactly 1 argument".to_string())
+                    } else {
+                        Ok(format!("+{}\r\n", args[0]))
+                    }
+                }
+                "PING" => Ok("+PONG\r\n".to_string()),
+                _ => Err(format!("Unknown command: {}", command)),
+            }
+        }
+        _ => Ok("+PONG\r\n".to_string()),
     }
 }
