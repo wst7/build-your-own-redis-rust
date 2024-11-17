@@ -1,14 +1,22 @@
 #![allow(unused_imports)]
+use std::env;
+
 use parser::{RespParser, RespType};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+mod config;
 mod parser;
 mod storage;
 
 #[tokio::main]
 async fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() > 2 && args[1] == "--dir" && args[3] == "--dbfilename" {
+        config::set(&args[1].strip_prefix("--").unwrap(), &args[2]).await;
+        config::set(&args[3].strip_prefix("--").unwrap(), &args[4]).await;
+    }
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
@@ -80,6 +88,19 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                     None => format!("$-1\r\n"),
                 }),
                 "PING" => Ok("+PONG\r\n".to_string()),
+                "CONFIG" => match args[0].to_uppercase().as_ref() {
+                    "GET" => {
+                        let parameter = &args[1];
+                        let parameter_len = parameter.len();
+                        let value = config::get(&parameter).await.unwrap();
+                        let len = value.len();
+                        Ok(format!(
+                            "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                            parameter_len, parameter, len, value
+                        ))
+                    }
+                    _ => Err(format!("Unknown config command: {}", args[1])),
+                },
                 _ => Err(format!("Unknown command: {}", command)),
             }
         }
