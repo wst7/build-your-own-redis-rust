@@ -4,6 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 mod parser;
+mod store;
 
 #[tokio::main]
 async fn main() {
@@ -29,13 +30,16 @@ async fn handle_connection(mut stream: TcpStream) {
         }
         let mut parser = RespParser::new(&buffer[..n]);
         match parser.parse() {
-            Ok(resp) => match execute_command(resp) {
+            Ok(resp) => match execute_command(resp).await {
                 Ok(response) => {
                     println!("Response: {}", response);
                     stream.write_all(response.as_bytes()).await.unwrap();
                 }
                 Err(err) => {
-                    stream.write_all(format!("-ERR {}\r\n", err).as_bytes()).await.unwrap();
+                    stream
+                        .write_all(format!("-ERR {}\r\n", err).as_bytes())
+                        .await
+                        .unwrap();
                 }
             },
 
@@ -47,7 +51,7 @@ async fn handle_connection(mut stream: TcpStream) {
     }
 }
 
-fn execute_command(resp: RespType) -> Result<String, String> {
+async fn execute_command(resp: RespType) -> Result<String, String> {
     match resp {
         RespType::Array(Some(elements)) => {
             let command = match &elements[0] {
@@ -67,6 +71,24 @@ fn execute_command(resp: RespType) -> Result<String, String> {
                         Err("ECHO command requires exactly 1 argument".to_string())
                     } else {
                         Ok(format!("+{}\r\n", args[0]))
+                    }
+                }
+                "SET" => {
+                    if args.len() != 2 {
+                        Err("SET command requires exactly 2 arguments".to_string())
+                    } else {
+                        store::set(&args[0], &args[1]).await;
+                        Ok(format!("+OK\r\n"))
+                    }
+                }
+                "GET" => {
+                    if args.len() != 1 {
+                        Err("GET command requires exactly 1 argument".to_string())
+                    } else {
+                        Ok(match store::get(&args[0]).await {
+                            Some(value) => format!("+{}\r\n", value),
+                            None => format!("$-1\r\n"),
+                        })
                     }
                 }
                 "PING" => Ok("+PONG\r\n".to_string()),
