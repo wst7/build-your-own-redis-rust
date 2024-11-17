@@ -4,7 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 mod parser;
-mod store;
+mod storage;
 
 #[tokio::main]
 async fn main() {
@@ -66,31 +66,19 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                 })
                 .collect::<Vec<String>>();
             match command.as_str() {
-                "ECHO" => {
-                    if args.len() != 1 {
-                        Err("ECHO command requires exactly 1 argument".to_string())
-                    } else {
-                        Ok(format!("+{}\r\n", args[0]))
-                    }
-                }
+                "ECHO" => Ok(format!("+{}\r\n", args[0])),
                 "SET" => {
-                    if args.len() != 2 {
-                        Err("SET command requires exactly 2 arguments".to_string())
-                    } else {
-                        store::set(&args[0], &args[1]).await;
-                        Ok(format!("+OK\r\n"))
+                    let mut expires = None;
+                    if args.len() == 4 && &args[2].to_uppercase() == "PX" {
+                        expires = Some(args[3].parse::<u128>().unwrap());
                     }
+                    storage::set(&args[0], &args[1], expires).await;
+                    Ok(format!("+OK\r\n"))
                 }
-                "GET" => {
-                    if args.len() != 1 {
-                        Err("GET command requires exactly 1 argument".to_string())
-                    } else {
-                        Ok(match store::get(&args[0]).await {
-                            Some(value) => format!("+{}\r\n", value),
-                            None => format!("$-1\r\n"),
-                        })
-                    }
-                }
+                "GET" => Ok(match storage::get(&args[0]).await {
+                    Some(value) => format!("+{}\r\n", value),
+                    None => format!("$-1\r\n"),
+                }),
                 "PING" => Ok("+PONG\r\n".to_string()),
                 _ => Err(format!("Unknown command: {}", command)),
             }
