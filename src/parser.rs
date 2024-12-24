@@ -1,3 +1,4 @@
+use num_bigint::BigInt;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -7,10 +8,15 @@ use std::str;
 #[derive(Debug)]
 pub enum RespType {
     SimpleString(String),
-    Error(String),
+    SimpleError(String),
     Integer(i64),
     BulkString(Option<String>),
+    BulkError(String),
     Array(Option<Vec<RespType>>),
+    Null,
+    Boolean(bool),
+    Double(f64),
+    BigNumber(BigInt),
 }
 
 // impl Display for RespType {
@@ -56,10 +62,15 @@ impl<'a> RespParser<'a> {
 
         match prefix {
             b'+' => self.parse_simple_string(),
-            b'-' => self.parse_error(),
+            b'-' => self.parse_simple_error(),
             b':' => self.parse_integer(),
             b'$' => self.parse_bulk_string(),
+            b'!' => self.parse_bulk_error(),
             b'*' => self.parse_array(),
+            b'_' => self.parse_null(),
+            b'#' => self.parse_boolean(),
+            b',' => self.parse_double(),
+            b'(' => self.parse_big_number(),
             _ => Err("Invalid RESP type marker".to_string()),
         }
     }
@@ -69,9 +80,9 @@ impl<'a> RespParser<'a> {
         Ok(RespType::SimpleString(line))
     }
 
-    fn parse_error(&mut self) -> Result<RespType, String> {
+    fn parse_simple_error(&mut self) -> Result<RespType, String> {
         let line = self.read_line()?;
-        Ok(RespType::Error(line))
+        Ok(RespType::SimpleError(line))
     }
 
     fn parse_integer(&mut self) -> Result<RespType, String> {
@@ -106,6 +117,23 @@ impl<'a> RespParser<'a> {
         Ok(RespType::BulkString(Some(string)))
     }
 
+    fn parse_bulk_error(&mut self) -> Result<RespType, String> {
+        let length: isize = self
+            .read_line()?
+            .parse()
+            .map_err(|_| "Invalid bulk error length".to_string())?;
+        let start = self.pos;
+        let end = self.pos + length as usize;
+        if end + 2 > self.input.len() || self.input[end..end + 2] != *b"\r\n" {
+            return Err("Invalid bulk error termination".to_string());
+        }
+        let error = str::from_utf8(&self.input[start..end])
+            .map_err(|_| "Invalid UTF-8 in bulk error")?
+            .to_string();
+        self.pos = end + 2;
+        Ok(RespType::BulkError(error))
+    }
+
     fn parse_array(&mut self) -> Result<RespType, String> {
         let length: isize = self
             .read_line()?
@@ -122,6 +150,40 @@ impl<'a> RespParser<'a> {
         }
 
         Ok(RespType::Array(Some(elements)))
+    }
+
+    fn parse_null(&mut self) -> Result<RespType, String> {
+        let line = self.read_line()?;
+        if line != "" {
+            return Err("Invalid null value".to_string());
+        }
+        Ok(RespType::Null)
+    }
+
+    fn parse_boolean(&mut self) -> Result<RespType, String> {
+        let value = self.read_line()?;
+        let bool = match value.as_str() {
+            "t" => true,
+            "f" => false,
+            _ => return Err("Invalid boolean value".to_string()),
+        };
+        return Ok(RespType::Boolean(bool));
+    }
+
+    fn parse_double(&mut self) -> Result<RespType, String> {
+        let value = self.read_line()?;
+        let double: f64 = value
+            .parse()
+            .map_err(|_| "Invalid double value".to_string())?;
+        Ok(RespType::Double(double))
+    }
+
+    fn parse_big_number(&mut self) -> Result<RespType, String> {
+        let value = self.read_line()?;
+        let big_num: BigInt = value
+            .parse()
+            .map_err(|_| "Invalid big number value".to_string())?;
+        Ok(RespType::BigNumber(big_num))
     }
 
     fn read_line(&mut self) -> Result<String, String> {

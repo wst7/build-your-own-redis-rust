@@ -37,3 +37,8 @@ pub async fn get(key: &str) -> Option<String> {
     None => None,
   }
 }
+
+pub async fn keys() -> Vec<String> {
+  let store = STORAGE.read().await;
+  store.keys().cloned().collect()
+}

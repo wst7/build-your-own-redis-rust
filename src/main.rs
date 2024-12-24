@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 use std::env;
+use std::path::Path;
 
 use parser::{RespParser, RespType};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8,6 +9,9 @@ use tokio::net::{TcpListener, TcpStream};
 mod config;
 mod parser;
 mod storage;
+mod command;
+mod rdb;
+mod constants;
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +20,7 @@ async fn main() {
     if args.len() > 2 && args[1] == "--dir" && args[3] == "--dbfilename" {
         config::set(&args[1].strip_prefix("--").unwrap(), &args[2]).await;
         config::set(&args[3].strip_prefix("--").unwrap(), &args[4]).await;
+        load_data_from_rdb().await;
     }
     loop {
         match listener.accept().await {
@@ -44,6 +49,7 @@ async fn handle_connection(mut stream: TcpStream) {
                     stream.write_all(response.as_bytes()).await.unwrap();
                 }
                 Err(err) => {
+                    println!("Error: {}", err);
                     stream
                         .write_all(format!("-ERR {}\r\n", err).as_bytes())
                         .await
@@ -74,36 +80,28 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                 })
                 .collect::<Vec<String>>();
             match command.as_str() {
-                "ECHO" => Ok(format!("+{}\r\n", args[0])),
-                "SET" => {
-                    let mut expires = None;
-                    if args.len() == 4 && &args[2].to_uppercase() == "PX" {
-                        expires = Some(args[3].parse::<u128>().unwrap());
-                    }
-                    storage::set(&args[0], &args[1], expires).await;
-                    Ok(format!("+OK\r\n"))
-                }
-                "GET" => Ok(match storage::get(&args[0]).await {
-                    Some(value) => format!("+{}\r\n", value),
-                    None => format!("$-1\r\n"),
-                }),
+                "ECHO" => command::echo(args),
+                "SET" => command::set(args).await,
+                "GET" => command::get(args).await,
                 "PING" => Ok("+PONG\r\n".to_string()),
                 "CONFIG" => match args[0].to_uppercase().as_ref() {
-                    "GET" => {
-                        let parameter = &args[1];
-                        let parameter_len = parameter.len();
-                        let value = config::get(&parameter).await.unwrap();
-                        let len = value.len();
-                        Ok(format!(
-                            "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-                            parameter_len, parameter, len, value
-                        ))
-                    }
+                    "GET" => command::config_get(args).await,
                     _ => Err(format!("Unknown config command: {}", args[1])),
                 },
+                "KEYS" => command::keys(args).await,
+                "SAVE" => command::save().await,
                 _ => Err(format!("Unknown command: {}", command)),
             }
         }
         _ => Ok("+PONG\r\n".to_string()),
+    }
+}
+
+async fn load_data_from_rdb() {
+    let dir = config::get("dir").await.unwrap();
+    let dbfilename = config::get("dbfilename").await.unwrap();
+    let path = Path::new(&dir).join(&dbfilename);
+    if path.exists() {
+        let rdb = rdb::Rdb::from(path.to_string_lossy().into_owned());
     }
 }
