@@ -19,26 +19,6 @@ pub enum RespType {
     BigNumber(BigInt),
 }
 
-// impl Display for RespType {
-//   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-//       match self {
-//           RespType::SimpleString(s) => write!(f, "+{}\r\n", s),
-//           RespType::Error(s) => write!(f, "-{}\r\n", s),
-//           RespType::Integer(i) => write!(f, ":{}\r\n", i),
-//           RespType::BulkString(Some(s)) => write!(f, "${}\r\n{}\r\n", s.len(), s),
-//           RespType::BulkString(None) => write!(f, "$-1\r\n"),
-//           RespType::Array(Some(elements)) => {
-//               write!(f, "*{}\r\n", elements.len())?;
-//               for element in elements {
-//                   write!(f, "{}", element)?;
-//               }
-//               Ok(())
-//           }
-//           RespType::Array(None) => write!(f, "*-1\r\n"),
-//       }
-//   }
-// }
-
 /// RESP 解析器
 pub struct RespParser<'a> {
     input: &'a [u8],

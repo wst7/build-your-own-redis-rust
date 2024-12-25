@@ -6,12 +6,11 @@ use parser::{RespParser, RespType};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+mod command;
 mod config;
 mod parser;
-mod storage;
-mod command;
 mod rdb;
-mod constants;
+mod storage;
 
 #[tokio::main]
 async fn main() {
@@ -102,6 +101,14 @@ async fn load_data_from_rdb() {
     let dbfilename = config::get("dbfilename").await.unwrap();
     let path = Path::new(&dir).join(&dbfilename);
     if path.exists() {
-        let rdb = rdb::Rdb::from(path.to_string_lossy().into_owned());
+        let buf = tokio::fs::read(&path).await.unwrap();
+        rdb::RdbParser::new(buf, |_, key, value, expire| {
+            tokio::spawn(async move {
+                println!("key: {}, value: {}, expire: {:?}", key, value, expire);
+                storage::set(&key, &value, expire).await;
+            });
+        })
+        .parse()
+        .unwrap();
     }
 }

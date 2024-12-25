@@ -1,12 +1,11 @@
-
-mod echo;
-mod set;
-mod get;
 mod config;
+mod echo;
+mod get;
 mod save;
+mod set;
 
-pub use echo::*;
-pub use set::*;
-pub use get::*;
 pub use config::*;
+pub use echo::*;
+pub use get::*;
 pub use save::*;
+pub use set::*;
