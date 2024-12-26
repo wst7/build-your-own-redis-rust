@@ -1,4 +1,5 @@
 use std::{collections::HashMap, sync::LazyLock};
+use time::OffsetDateTime;
 use tokio::{sync::RwLock, time::Instant};
 use crate::rdb::RdbValue;
 
@@ -8,11 +9,11 @@ static STORAGE: LazyLock<RwLock<HashMap<String, Item>>> =
 #[derive(Clone, Debug)]
 struct Item {
     value: String,
-    expires: Option<u128>,
+    expires: Option<OffsetDateTime>,
     created: Instant,
 }
 
-pub async fn set(key: &str, value: &str, expires: Option<u128>) {
+pub async fn set(key: &str, value: &str, expires: Option<OffsetDateTime>) {
     let mut store = STORAGE.write().await;
     let item = Item {
         value: value.to_string(),
@@ -28,7 +29,10 @@ pub async fn get(key: &str) -> Option<String> {
     match item {
         Some(item) => {
             if let Some(expires) = item.expires {
-                if item.created.elapsed().as_millis() > expires {
+                if expires < OffsetDateTime::now_utc(){
+                    // let mut store = STORAGE.write().await;
+                    // store.remove(key);
+                    // TODO: Remove the key from the storage
                     return None;
                 }
             }

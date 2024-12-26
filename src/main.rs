@@ -3,6 +3,7 @@ use std::env;
 use std::path::Path;
 
 use parser::{RespParser, RespType};
+use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -105,7 +106,16 @@ async fn load_data_from_rdb() {
         rdb::RdbParser::new(buf, |_, key, value, expire| {
             tokio::spawn(async move {
                 println!("key: {}, value: {}, expire: {:?}", key, value, expire);
-                storage::set(&key, &value, expire).await;
+               
+                let expires = match expire {
+                    Some(expires_at) => {
+                        let time = OffsetDateTime::from_unix_timestamp_nanos(expires_at as i128 * 1_000_000).unwrap();
+                        println!("UTC time: {}", time);
+                        Some(time)
+                    },
+                    None => None,
+                };
+                storage::set(&key, &value, expires).await;
             });
         })
         .parse()

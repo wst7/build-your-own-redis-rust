@@ -1,10 +1,13 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
-    io::Read,
+    io::{Cursor, Read},
     path::PathBuf,
     str, vec,
 };
+
+use byteorder::{LittleEndian, ReadBytesExt};
+// use tokio::io::AsyncReadExt;
 
 enum OpCode {
     AUX = 0xFA,
@@ -139,19 +142,20 @@ impl RdbParser {
                 }
                 OpCode::EXPIRETIME => {
                     let timestamp = self.read_bytes(4)?;
-                    expires_at = Some(u128::from_be_bytes(
-                        timestamp
-                            .try_into()
-                            .expect("Failed to parse expiration timestamp"),
-                    ));
+                    let mut rdr = Cursor::new(timestamp);
+                    expires_at = Some(
+                        (rdr.read_u32::<LittleEndian>()
+                            .map_err(|_| "fail to read expire")?
+                            * 1000) as u128,
+                    );
                 }
                 OpCode::EXPIRETIMEMS => {
                     let timestamp = self.read_bytes(8)?;
-                    expires_at = Some(u128::from_be_bytes(
-                        timestamp
-                            .try_into()
-                            .expect("Failed to parse expiration timestamp"),
-                    ));
+                    let mut rdr = Cursor::new(timestamp);
+                    expires_at = Some(
+                        rdr.read_u64::<LittleEndian>()
+                            .map_err(|_| "fail to read expire")? as u128,
+                    );
                 }
                 _ => {
                     let value_type = next_op;
@@ -309,7 +313,6 @@ impl ToString for RdbValue {
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct SortedSetEntry {

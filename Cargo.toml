@@ -25,3 +25,5 @@ thiserror = "1.0.32"                                # error handling
 tokio = { version = "1.23.0", features = ["full"] } # async networking
 num-bigint = "0.4"
 regex = "1.11.1"
+byteorder = "1.5.0"
+time = "0.3.37"
