@@ -111,6 +111,7 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                 },
                 "KEYS" => commands::keys(args).await,
                 "SAVE" => commands::save().await,
+                "INFO" => commands::info().await,
                 _ => Err(format!("Unknown command: {}", command)),
             }
         }
