@@ -2,20 +2,41 @@
 use std::env;
 use std::path::Path;
 
+use clap::{command, Parser};
 use parser::{RespParser, RespType};
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-mod command;
+mod commands;
 mod config;
 mod parser;
 mod rdb;
 mod storage;
 
+#[derive(Parser)]
+#[command(name = "Rust-Redis", version = "0.1.0", author = "Your Name")]
+struct Args {
+    #[arg(short, long)]
+    dir: Option<String>,
+    #[arg(short, long)]
+    dbfilename: Option<String>,
+    #[arg(short, long)]
+    port: Option<u16>,
+}
+
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let args = Args::parse();
+    if args.dir.is_some() {
+        config::set("dir", &args.dir.unwrap()).await;
+    }
+    if args.dbfilename.is_some() {
+        config::set("dbfilename", &args.dbfilename.unwrap()).await;
+    }
+    let port = args.port.map_or(6379, |port| port);
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
+    
     let args = env::args().collect::<Vec<String>>();
     if args.len() > 2 && args[1] == "--dir" && args[3] == "--dbfilename" {
         config::set(&args[1].strip_prefix("--").unwrap(), &args[2]).await;
@@ -80,16 +101,16 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                 })
                 .collect::<Vec<String>>();
             match command.as_str() {
-                "ECHO" => command::echo(args),
-                "SET" => command::set(args).await,
-                "GET" => command::get(args).await,
+                "ECHO" => commands::echo(args),
+                "SET" => commands::set(args).await,
+                "GET" => commands::get(args).await,
                 "PING" => Ok("+PONG\r\n".to_string()),
                 "CONFIG" => match args[0].to_uppercase().as_ref() {
-                    "GET" => command::config_get(args).await,
+                    "GET" => commands::config_get(args).await,
                     _ => Err(format!("Unknown config command: {}", args[1])),
                 },
-                "KEYS" => command::keys(args).await,
-                "SAVE" => command::save().await,
+                "KEYS" => commands::keys(args).await,
+                "SAVE" => commands::save().await,
                 _ => Err(format!("Unknown command: {}", command)),
             }
         }
