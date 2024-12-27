@@ -1,6 +1,12 @@
-use crate::resp::RespType;
+use crate::{config, resp::RespType};
+
+
 
 
 pub async fn info() -> Result<RespType, String> {
-    Ok(RespType::SimpleString("role:master".to_string()))
+    let role = match config::get("replicaof").await {
+        Some(_) => "slave",
+        None => "master",
+    };
+    Ok(RespType::SimpleString(format!("role: {}", role)))
 }

@@ -17,12 +17,17 @@ mod storage;
 #[derive(Parser)]
 #[command(name = "Rust-Redis", version = "0.1.0", author = "Your Name")]
 struct Args {
-    #[arg(short, long)]
+    #[arg(long)]
     dir: Option<String>,
-    #[arg(short, long)]
+
+    #[arg(long)]
     dbfilename: Option<String>,
-    #[arg(short, long)]
+
+    #[arg(long)]
     port: Option<u16>,
+
+    #[arg(long)]
+    replicaof: Option<String>,
 }
 
 #[tokio::main]
@@ -34,17 +39,14 @@ async fn main() {
     if args.dbfilename.is_some() {
         config::set("dbfilename", &args.dbfilename.unwrap()).await;
     }
+    if args.replicaof.is_some() {
+        config::set("replicaof", &args.replicaof.unwrap()).await;
+    }
     let port = args.port.map_or(6379, |port| port);
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
         .await
         .unwrap();
-
-    let args = env::args().collect::<Vec<String>>();
-    if args.len() > 2 && args[1] == "--dir" && args[3] == "--dbfilename" {
-        config::set(&args[1].strip_prefix("--").unwrap(), &args[2]).await;
-        config::set(&args[3].strip_prefix("--").unwrap(), &args[4]).await;
-        load_data_from_rdb().await;
-    }
+    load_data_from_rdb().await;
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
@@ -122,8 +124,14 @@ async fn execute_command(resp: RespType) -> Result<RespType, String> {
 }
 
 async fn load_data_from_rdb() {
-    let dir = config::get("dir").await.unwrap();
-    let dbfilename = config::get("dbfilename").await.unwrap();
+    let dir = match config::get("dir").await {
+        Some(dir) => dir,
+        None => return,
+    };
+    let dbfilename = match config::get("dbfilename").await {
+        Some(dbfilename) => dbfilename,
+        None => return,
+    };
     let path = Path::new(&dir).join(&dbfilename);
     if path.exists() {
         let buf = tokio::fs::read(&path).await.unwrap();
@@ -137,7 +145,6 @@ async fn load_data_from_rdb() {
                             expires_at as i128 * 1_000_000,
                         )
                         .unwrap();
-                        println!("UTC time: {}", time);
                         Some(time)
                     }
                     None => None,

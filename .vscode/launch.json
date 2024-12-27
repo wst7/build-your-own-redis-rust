@@ -19,7 +19,7 @@
           "kind": "bin"
         }
       },
-      "args": ["--dir", "./", "--dbfilename", "dump.rdb"],
+      "args": ["--port", "6380", "--replicaof", "localhost 6379"],
       "cwd": "${workspaceFolder}"
     }, 
   ]
