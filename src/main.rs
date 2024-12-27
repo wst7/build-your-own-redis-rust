@@ -3,15 +3,15 @@ use std::env;
 use std::path::Path;
 
 use clap::{command, Parser};
-use parser::{RespParser, RespType};
+use resp::{RespParser, RespType};
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 mod commands;
 mod config;
-mod parser;
 mod rdb;
+mod resp;
 mod storage;
 
 #[derive(Parser)]
@@ -35,8 +35,10 @@ async fn main() {
         config::set("dbfilename", &args.dbfilename.unwrap()).await;
     }
     let port = args.port.map_or(6379, |port| port);
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
-    
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+        .await
+        .unwrap();
+
     let args = env::args().collect::<Vec<String>>();
     if args.len() > 2 && args[1] == "--dir" && args[3] == "--dbfilename" {
         config::set(&args[1].strip_prefix("--").unwrap(), &args[2]).await;
@@ -66,27 +68,27 @@ async fn handle_connection(mut stream: TcpStream) {
         match parser.parse() {
             Ok(resp) => match execute_command(resp).await {
                 Ok(response) => {
-                    println!("Response: {}", response);
-                    stream.write_all(response.as_bytes()).await.unwrap();
+                    stream.write_all(&response.serialize()).await.unwrap();
                 }
                 Err(err) => {
-                    println!("Error: {}", err);
                     stream
-                        .write_all(format!("-ERR {}\r\n", err).as_bytes())
+                        .write_all(&RespType::SimpleError(err).serialize())
                         .await
                         .unwrap();
                 }
             },
 
             Err(e) => {
-                let response = format!("-ERR {}\r\n", e);
-                stream.write_all(response.as_bytes()).await.unwrap();
+                stream
+                    .write_all(&RespType::SimpleError(e).serialize())
+                    .await
+                    .unwrap();
             }
         }
     }
 }
 
-async fn execute_command(resp: RespType) -> Result<String, String> {
+async fn execute_command(resp: RespType) -> Result<RespType, String> {
     match resp {
         RespType::Array(Some(elements)) => {
             let command = match &elements[0] {
@@ -104,7 +106,7 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                 "ECHO" => commands::echo(args),
                 "SET" => commands::set(args).await,
                 "GET" => commands::get(args).await,
-                "PING" => Ok("+PONG\r\n".to_string()),
+                "PING" => Ok(RespType::SimpleString("PONG".to_string())),
                 "CONFIG" => match args[0].to_uppercase().as_ref() {
                     "GET" => commands::config_get(args).await,
                     _ => Err(format!("Unknown config command: {}", args[1])),
@@ -115,7 +117,7 @@ async fn execute_command(resp: RespType) -> Result<String, String> {
                 _ => Err(format!("Unknown command: {}", command)),
             }
         }
-        _ => Ok("+PONG\r\n".to_string()),
+        _ => Ok(RespType::SimpleString("Invalid command".to_string())),
     }
 }
 
@@ -128,13 +130,16 @@ async fn load_data_from_rdb() {
         rdb::RdbParser::new(buf, |_, key, value, expire| {
             tokio::spawn(async move {
                 println!("key: {}, value: {}, expire: {:?}", key, value, expire);
-               
+
                 let expires = match expire {
                     Some(expires_at) => {
-                        let time = OffsetDateTime::from_unix_timestamp_nanos(expires_at as i128 * 1_000_000).unwrap();
+                        let time = OffsetDateTime::from_unix_timestamp_nanos(
+                            expires_at as i128 * 1_000_000,
+                        )
+                        .unwrap();
                         println!("UTC time: {}", time);
                         Some(time)
-                    },
+                    }
                     None => None,
                 };
                 storage::set(&key, &value, expires).await;

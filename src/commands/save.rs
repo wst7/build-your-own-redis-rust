@@ -1,3 +1,5 @@
-pub async fn save() -> Result<String, String> {
-    Ok("+OK\r\n".to_string())
+use crate::resp::RespType;
+
+pub async fn save() -> Result<RespType, String> {
+    Ok(RespType::SimpleString("OK".to_string()))
 }

@@ -1,16 +1,16 @@
-use crate::storage;
+use crate::{resp::RespType, storage};
 use regex::Regex;
 
-pub async fn get(args: Vec<String>) -> Result<String, String> {
+pub async fn get(args: Vec<String>) -> Result<RespType, String> {
     Ok(match storage::get(&args[0]).await {
-        Some(value) => format!("+{}\r\n", value),
-        None => format!("$-1\r\n"),
+        Some(value) => RespType::SimpleString(value),
+        None => RespType::BulkString(None),
     })
 }
 
-pub async fn keys(args: Vec<String>) -> Result<String, String> {
+pub async fn keys(args: Vec<String>) -> Result<RespType, String> {
     if args.len() != 1 {
-        return Err("-ERR wrong number of arguments for 'keys' command\r\n".to_string());
+        return Ok(RespType::SimpleError("wrong number of arguments for 'keys' command".to_string()));
     }
 
     let regex_pattern = &args[0].replace('*', ".*"); // Replace '*' with '.*' (wildcard)
@@ -22,11 +22,11 @@ pub async fn keys(args: Vec<String>) -> Result<String, String> {
         .filter(|key| patten.is_match(key))
         .map(|key| key.to_string())
         .collect::<Vec<String>>();
+    
     let values = keys
         .iter()
-        .map(|key| format!("+{}\r\n", key))
-        .collect::<Vec<String>>()
-        .join("");
-    let reply = format!("*{}\r\n{}", keys.len(), values);
+        .map(|key| RespType::SimpleString(key.to_string()))
+        .collect::<Vec<RespType>>();
+    let reply = RespType::Array(Some(values));
     Ok(reply)
 }

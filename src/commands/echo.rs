@@ -1,3 +1,5 @@
-pub fn echo(args: Vec<String>) -> Result<String, String> {
-    Ok(format!("+{}\r\n", args[0]))
+use crate::resp::RespType;
+
+pub fn echo(args: Vec<String>) -> Result<RespType, String> {
+    Ok(RespType::SimpleString(args[0].clone()))
 }

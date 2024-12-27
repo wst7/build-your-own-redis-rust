@@ -19,6 +19,36 @@ pub enum RespType {
     BigNumber(BigInt),
 }
 
+impl RespType {
+  pub fn serialize(&self) -> Vec<u8> {
+    match self {
+      RespType::SimpleString(s) => format!("+{}\r\n", s).into_bytes(),
+      RespType::SimpleError(e) => format!("-{}\r\n", e).into_bytes(),
+      RespType::Integer(i) => format!(":{}\r\n", i).into_bytes(),
+      RespType::BulkString(Some(s)) => {
+        format!("${}\r\n{}\r\n", s.len(), s).into_bytes()
+      }
+      RespType::BulkString(None) => "$-1\r\n".to_string().into_bytes(),
+      RespType::BulkError(e) => format!("!{}\r\n", e).into_bytes(),
+      RespType::Array(Some(elements)) => {
+        let mut serialized = format!("*{}\r\n", elements.len()).into_bytes();
+        
+        for element in elements {
+          serialized.extend(element.serialize());
+        }
+        serialized
+      }
+      RespType::Array(None) => "*-1\r\n".to_string().into_bytes(),
+      RespType::Null => "_\r\n".to_string().into_bytes(),
+      RespType::Boolean(b) => format!("#{}\r\n", if *b { "t" } else { "f" }).into_bytes(),
+      RespType::Double(d) => format!(",{}\r\n", d).into_bytes(),
+      RespType::BigNumber(n) => format!("({})\r\n", n).into_bytes(),
+
+    }
+  }
+}
+
+
 /// RESP 解析器
 pub struct RespParser<'a> {
     input: &'a [u8],

@@ -1,8 +1,8 @@
 use time::{Duration, OffsetDateTime};
 
-use crate::storage;
+use crate::{resp::RespType, storage};
 
-pub async fn set(args: Vec<String>) -> Result<String, String> {
+pub async fn set(args: Vec<String>) -> Result<RespType, String> {
     let mut expires = None;
     if args.len() == 4  {
         if &args[2].to_uppercase() == "PX" {
@@ -13,5 +13,5 @@ pub async fn set(args: Vec<String>) -> Result<String, String> {
         }
     }
     storage::set(&args[0], &args[1], expires).await;
-    Ok(format!("+OK\r\n"))
+    Ok(RespType::SimpleString("OK".to_string()))
 }
